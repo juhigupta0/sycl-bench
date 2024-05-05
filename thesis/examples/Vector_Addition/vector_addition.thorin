@@ -1,0 +1,125 @@
+.plugin core;
+.plugin mem;
+.plugin math;
+
+.let Top = ⊤:.Nat;
+
+.con kernel_integer .[size: .Nat][
+    mem : %mem.M,
+    arg1 : %mem.Ptr (<<Top; (.Idx size)>>, 0),
+    arg1_p : %mem.Ptr (<<Top; (.Idx size)>>, 0),
+    arg1_i : .Idx size,
+    arg2 : %mem.Ptr (<<Top; (.Idx size)>>, 0),
+    arg2_p : %mem.Ptr (<<Top; (.Idx size)>>, 0),
+    arg2_i : .Idx size,
+    result : %mem.Ptr (<<Top; (.Idx size)>>, 0),
+    result_p : %mem.Ptr (<<Top; (.Idx size)>>, 0),
+    result_i : .Idx size, 
+    exit : .Cn [%mem.M]
+] = {
+
+    .let group_offset = %core.wrap.mul 0 (%core.group_id (0, 0), %core.group_size (0, 0));
+    .let global_id = %core.wrap.add 0 (%core.local_id (0, 0), group_offset);
+
+    .let `lea = %mem.lea (Top, <Top; (.Idx size)>, 0) (arg1, global_id);
+    .let (`mem, val1) = %mem.load (mem, lea);  
+    .let `lea = %mem.lea (Top, <Top; (.Idx size)>, 0) (arg2, global_id);
+    .let (`mem, val2) = %mem.load (mem, lea);
+
+    .let sum = %core.wrap.add 0 (val1, val2);
+
+    .let `lea = %mem.lea (Top, <Top; .Idx size>, 0) (result, global_id);
+    .let smem = %mem.store (mem, lea, sum);
+
+    exit smem
+};
+
+.con .extern Vector_Add_int arg::[mem : %mem.M,
+    arg1     : %mem.Ptr (<<Top; (.Idx %core.i32)>>, 0),  
+    arg1_p   : %mem.Ptr (<<Top; (.Idx %core.i32 )>>, 0),
+    arg1_i   : .Idx %core.i32,
+    arg2     : %mem.Ptr (<<Top; (.Idx %core.i32)>>, 0),
+    arg2_p   : %mem.Ptr (<<Top; (.Idx %core.i32)>>, 0),
+    arg2_i   : .Idx %core.i32,
+    result   : %mem.Ptr (<<Top; (.Idx %core.i32)>>, 0),
+    result_p : %mem.Ptr (<<Top; (.Idx %core.i32)>>, 0),
+    result_i : .Idx %core.i32, 
+    exit : .Cn [%mem.M] 
+] = {
+    kernel_integer arg
+};
+
+.con .extern Vector_Add_long_long arg::[mem : %mem.M,
+    arg1     : %mem.Ptr (<<Top; (.Idx %core.i64)>>, 0),  
+    arg1_p   : %mem.Ptr (<<Top; (.Idx %core.i64)>>, 0),
+    arg1_i   : .Idx %core.i64,
+    arg2     : %mem.Ptr (<<Top; (.Idx %core.i64)>>, 0),
+    arg2_p   : %mem.Ptr (<<Top; (.Idx %core.i64)>>, 0),
+    arg2_i   : .Idx %core.i64,
+    result   : %mem.Ptr (<<Top; (.Idx %core.i64)>>, 0),
+    result_p : %mem.Ptr (<<Top; (.Idx %core.i64)>>, 0),
+    result_i : .Idx %core.i64, 
+    exit : .Cn [%mem.M] 
+] = {
+    kernel_integer arg
+};
+
+.con kernel_floating .[size: «2; .Nat»][
+    mem : %mem.M,
+    arg1 : %mem.Ptr (<<Top; (%math.F size)>>, 0),
+    arg1_p : %mem.Ptr (<<Top; (%math.F size)>>, 0),
+    arg1_i : %math.F size,
+    arg2 : %mem.Ptr (<<Top; (%math.F size)>>, 0),
+    arg2_p : %mem.Ptr (<<Top; (%math.F size)>>, 0),
+    arg2_i : %math.F size,
+    result : %mem.Ptr (<<Top; (%math.F size)>>, 0),
+    result_p : %mem.Ptr (<<Top; (%math.F size)>>, 0),
+    result_i : %math.F size, 
+    exit : .Cn [%mem.M]
+] = {
+
+    .let group_offset = %core.wrap.mul 0 (%core.group_id (0, 0), %core.group_size (0, 0));
+    .let global_id = %core.wrap.add 0 (%core.local_id (0, 0), group_offset);
+
+    .let `lea = %mem.lea (Top, <Top; (%math.F size)>, 0) (arg1, global_id);
+    .let (`mem, val1) = %mem.load (mem, lea);  
+    .let `lea = %mem.lea (Top, <Top; (%math.F size)>, 0) (arg2, global_id);
+    .let (`mem, val2) = %mem.load (mem, lea);
+
+    .let sum = %math.arith.add 0 (val1, val2);
+
+    .let `lea = %mem.lea (Top, <Top; %math.F size>, 0) (result, global_id);
+    .let smem = %mem.store (mem, lea, sum);
+
+    exit smem
+};
+
+.con .extern Vector_Add_float arg::[mem : %mem.M,
+    arg1     : %mem.Ptr (<<Top; (%math.F %math.f32)>>, 0),  
+    arg1_p   : %mem.Ptr (<<Top; (%math.F %math.f32)>>, 0),
+    arg1_i   : %math.F %math.f32,
+    arg2     : %mem.Ptr (<<Top; (%math.F %math.f32)>>, 0),
+    arg2_p   : %mem.Ptr (<<Top; (%math.F %math.f32)>>, 0),
+    arg2_i   : %math.F %math.f32,
+    result   : %mem.Ptr (<<Top; (%math.F %math.f32)>>, 0),
+    result_p : %mem.Ptr (<<Top; (%math.F %math.f32)>>, 0),
+    result_i : %math.F %math.f32, 
+    exit : .Cn [%mem.M] 
+] = {
+    kernel_floating arg
+};
+
+.con .extern Vector_Add_double arg::[mem : %mem.M,
+    arg1     : %mem.Ptr (<<Top; (%math.F %math.f64)>>, 0),  
+    arg1_p   : %mem.Ptr (<<Top; (%math.F %math.f64)>>, 0),
+    arg1_i   : %math.F %math.f64,
+    arg2     : %mem.Ptr (<<Top; (%math.F %math.f64)>>, 0),
+    arg2_p   : %mem.Ptr (<<Top; (%math.F %math.f64)>>, 0),
+    arg2_i   : %math.F %math.f64,
+    result   : %mem.Ptr (<<Top; (%math.F %math.f64)>>, 0),
+    result_p : %mem.Ptr (<<Top; (%math.F %math.f64)>>, 0),
+    result_i : %math.F %math.f64, 
+    exit : .Cn [%mem.M] 
+] = {
+    kernel_floating arg
+};

@@ -1,0 +1,82 @@
+.plugin core;
+.plugin mem;
+.plugin math;
+.plugin affine;
+.plugin matrix;
+
+.let Top = ⊤:.Nat;
+.let dim = 512;
+.let MT = (2,(dim,dim), %math.F32);
+
+.con .extern MeanSquareErrorKernel [mem : %mem.M, 
+    matrix_size   : %core.I64,
+    alpha         : %matrix.Mat (2, (dim, dim), %math.F32),
+    alpha_p       : %mem.Ptr (<<Top; (%math.F32)>>, 0),
+    alpha_i       : %core.I64,
+    alpha_i_1     : %core.I64,
+    in1           : %matrix.Mat (2, (dim, dim), %math.F32),
+    in1_p         : %mem.Ptr (<<Top; (%math.F32)>>, 0),
+    in1_i         : %core.I64,
+    in1_i_1       : %core.I64,
+    beta          : %matrix.Mat (2, (dim, dim), %math.F32),
+    beta_p        : %mem.Ptr (<<Top; (%math.F32)>>, 0),
+    beta_i        : %core.I64,
+    beta_i_1      : %core.I64,
+    in2           : %matrix.Mat (2, (dim, dim), %math.F32),
+    in2_p         : %mem.Ptr (<<Top; (%math.F32)>>, 0),
+    in2_i         : %core.I64,
+    in2_i_1       : %core.I64,
+    output_buf    : %matrix.Mat (2, (dim, dim), %math.F32),
+    output_buf_p  : %mem.Ptr (<<Top; (%math.F32)>>, 0),
+    output_buf_i  : %core.I64,
+    output_buf_i_1: %core.I64,
+    return        : .Cn [%mem.M]
+] = {
+    
+    // size_t i = item.get_global_id(0);
+    .let i = %core.global_id(1,0);
+    .let i_cast = %core.conv.u dim i;
+
+    // size_t j = item.get_global_id(1);
+    .let j = %core.global_id(0,0);
+    .let j_cast = %core.conv.u dim j;
+    
+    .let matrix_size_cast = %core.bitcast (.Idx dim) matrix_size;
+
+    .con cond_return [mem: %mem.M] = {
+        return (mem)
+    };
+
+    .con cond_enter [mem: %mem.M] = {
+        
+        .con for_exit [acc : %math.F32, mem : %mem.M] = {
+            
+            .let (`mem, beta_ij_val) = %matrix.read MT (mem, beta, (i_cast, j_cast));
+            .let (`mem, in2_ij_val) = %matrix.read MT (mem, in2, (i_cast, j_cast));
+
+            .let error =  %math.arith.sub 0 (%math.arith.add 0 (acc, beta_ij_val), in2_ij_val);
+
+            .let (`mem, `output_buf) = %matrix.insert MT (mem, output_buf, (i_cast, j_cast), %math.arith.mul 0 (error, error));
+            return (mem)
+        };
+
+        .con for_body [k : (%core.I32), [acc : %math.F32, mem : %mem.M], continue : .Cn [%math.F32, %mem.M]] = {
+            .let `k = %core.conv.u dim k;
+
+            .let (`mem, alpha_ik_val) = %matrix.read MT (mem, alpha, (i_cast, k));
+            .let (`mem, in1_kj_val) = %matrix.read MT (mem, in1, (k, j_cast));
+            
+            .let acc_prod = %math.arith.mul 0 (alpha_ik_val, in1_kj_val);    
+            .let `acc = %math.arith.add 0 (acc, acc_prod);
+            continue(acc, mem)
+        };    
+    
+        %affine.For (%core.i32, 2, (%math.F32, %mem.M)) (0:(%core.I32), 512:(%core.I32), 1:(%core.I32), (0.0:(%math.F32), mem), for_body, for_exit)
+    
+    };   
+
+    .let cond = %core.bit2.and_ 0 (%core.icmp.ul (i, matrix_size), %core.icmp.ul (j, matrix_size));
+    .let cond_call = (cond_return, cond_enter)#cond;
+    cond_call ( mem )
+
+};

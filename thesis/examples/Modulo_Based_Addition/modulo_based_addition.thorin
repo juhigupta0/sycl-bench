@@ -1,0 +1,69 @@
+.plugin core;
+.plugin mem;
+
+.let Top = ⊤:.Nat;
+
+.con .extern Modulo_Based_Addition [mem : %mem.M, 
+    scratch_1   : %core.I64,
+    scratch_2   : %core.I64,
+    acc         : %mem.Ptr (<<Top; (%core.I32)>>, 0),
+    acc_p       : %mem.Ptr (<<Top; (%core.I32)>>, 0),
+    acc_i       : %core.I32,
+    exit        : .Cn [%mem.M]
+] = {
+
+    .let lid = %core.local_id (0, 0);
+    .let group_size = %core.group_size (0, 0);
+
+    .let gid = %core.global_id(0, 0);
+
+    // acc[item.get_global_id()];
+    .let `lea = %mem.lea (Top, <Top; %core.I32>, 0) (acc, gid);
+    .let (`mem, acc_val) = %mem.load (mem, lea); 
+
+    // scratch[lid] 
+    .let ptr_as3 = %core.get_dynamic_local_memory(Top, <Top; %core.I8>, 3);
+    .let scratch_1_ptr = %mem.addrspacecast_and_lea (Top, <Top; %core.I8>, 3) (ptr_as3, 0, scratch_1);
+    .let scratch_1_ptr_i32 = %core.bitcast (%mem.Ptr(<<Top; %core.I32>>, 0)) scratch_1_ptr;
+    .let `lea = %mem.lea (Top, <Top; %core.I32>, 0) (scratch_1_ptr_i32, lid);
+    
+    // scratch[lid] = acc[item.get_global_id()];
+    .let `mem = %mem.store (mem, lea, %core.bitcast %core.I32 acc_val);
+    
+    // scratch[(lid + 1) % group_size];
+    .let (`mem, val) = %core.div.urem (mem, (%core.wrap.add %core.mode.nsw (lid, 1:%core.I64), group_size));
+    
+    // const auto load = scratch[(lid + 1) % group_size];
+    .let `lea = %mem.lea (Top, <Top; %core.I32>, 0) (scratch_1_ptr_i32, val);
+    .let (`mem, load_val) = %mem.load (mem, lea);
+
+    // scratch[lid]
+    .let `lea = %mem.lea (Top, <Top; %core.I32>, 0) (scratch_1_ptr_i32, lid);
+    .let (`mem, scratch_lid) = %mem.load (mem, lea);
+    // scratch[lid] += load;
+    .let `mem = %mem.store (mem, lea, %core.wrap.add %core.mode.nsw (scratch_lid, load_val));
+
+    // if(lid == 0)
+    .let condition = %core.icmp.e(lid, 0:%core.I64);
+
+    .con cond_exit[mem : %mem.M] = {
+        exit mem
+    };
+
+    .con cond_body[mem : %mem.M] = {
+    
+        // scratch[lid]
+        .let `lea = %mem.lea (Top, <Top; %core.I32>, 0) (scratch_1_ptr_i32, lid);
+        .let (`mem, scratch_lid) = %mem.load (mem, lea);
+
+        // acc[item.get_global_id()];
+        .let `lea = %mem.lea (Top, <Top; %core.I32>, 0) (acc, gid);
+        .let smem = %mem.store(mem, lea, scratch_lid);
+
+        exit smem
+    };
+
+    .let target = (cond_exit, cond_body)#condition;
+    target(mem)
+    
+};

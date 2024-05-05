@@ -14,7 +14,7 @@
 
 using CommandLineArguments = std::unordered_map<std::string, std::string>;
 using FlagList = std::unordered_set<std::string>;
-
+bool kernel_type_thorin = 0;
 namespace detail {
 
 template<class T>
@@ -139,8 +139,6 @@ public:
     return flags.find(flag) != flags.end();
   }
 
-  
-
 private:
   
 
@@ -190,9 +188,12 @@ public:
   {
     std::size_t size = cli_parser.getOrDefault<std::size_t>("--size", 3072);
     std::size_t local_size = cli_parser.getOrDefault<std::size_t>("--local", 256);
-    std::size_t num_runs = cli_parser.getOrDefault<std::size_t>("--num-runs", 5);
-
+    std::size_t num_runs = cli_parser.getOrDefault<std::size_t>("--num-runs", 5);   
     std::string device_type = cli_parser.getOrDefault<std::string>("--device", "default");
+  
+    std::string kernel_type = cli_parser.getOrDefault<std::string>("--kernel-type", "acpp");
+    kernel_type_thorin = ifThorinKernelType(kernel_type);
+
     cl::sycl::queue q = getQueue(device_type);
 
     bool verification_enabled = true;
@@ -257,6 +258,16 @@ private:
       throw std::invalid_argument{"unknown device type: " + device_type};
     }
   }
+
+  bool ifThorinKernelType(std::string& kernel_type) const {
+
+    if(kernel_type == "thorin")
+      return 1;
+    else
+      return 0;
+    
+  }   
+  
 
   CommandLine cli_parser;
 };

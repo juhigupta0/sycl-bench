@@ -1,0 +1,140 @@
+.plugin core;
+.plugin mem;
+.plugin matrix;
+
+.let Top = ⊤:.Nat;
+.let dim = 256;
+.let MT = (2,(dim,dim), %math.F64);
+.let BlockSize = 16:(.Idx dim);
+
+.con .extern DGEMM_MatMulBlocked [mem : %mem.M, 
+    Awrk        : %core.I64,
+    Awrk_1      : %core.I64,
+    Awrk_i      : %core.I64,
+    a           : %matrix.Mat (2, (dim, dim), %math.F64),
+    a_p         : %mem.Ptr (<<Top; (%math.F64)>>, 0),
+    a_i_1       : %core.I64,
+    a_i         : %core.I64,
+    Bwrk        : %core.I64,
+    Bwrk_1      : %core.I64,
+    Bwrk_i      : %core.I64,    
+    b           : %matrix.Mat (2, (dim, dim), %math.F64),
+    b_p         : %mem.Ptr (<<Top; (%math.F64)>>, 0),
+    b_i_1       : %core.I64,
+    b_i         : %core.I64,
+    c           : %matrix.Mat (2, (dim, dim), %math.F64),
+    c_p         : %mem.Ptr (<<Top; (%math.F64)>>, 0),
+    c_i_1       : %core.I64,
+    c_i         : %core.I64,
+    return      : .Cn [%mem.M]
+] = {
+    
+    //const size_t i = idx.get_global_id(0);
+    .let i = %core.global_id(1,0);
+    .let i_cast = %core.conv.u dim i;
+    //const size_t j = idx.get_global_id(1);
+    .let j = %core.global_id(0,0);
+    .let j_cast = %core.conv.u dim j;
+
+    //const size_t iloc = idx.get_local_id(0)
+    .let iloc = %core.local_id(1, 0);
+    .let iloc_cast = %core.conv.u dim iloc;
+    //const size_t jloc = idx.get_local_id(1)
+    .let jloc = %core.local_id(0, 0);
+    .let jloc_cast = %core.conv.u dim jloc;
+
+    //const size_t Iblk = idx.get_group(0);
+    .let Iblk = %core.group_id(1, 0);
+    .let Iblk_cast = %core.conv.u dim Iblk;
+    //const size_t Jblk = idx.get_group(1);
+    .let Jblk = %core.group_id(0, 0);
+    .let Jblk_cast = %core.conv.u dim Jblk;
+    
+    //Awrk
+    .let ptr_as3_Awrk = %core.get_dynamic_local_memory(Top, <Top; %core.I8>, 3);
+    .let Awrk_ptr = %mem.addrspacecast_and_lea (Top, <Top; %core.I8>, 3) (ptr_as3_Awrk, 0, Awrk);
+    .let Awrk_ptr_i32 = %core.bitcast (%mem.Ptr(<<Top; %math.F64>>, 0)) Awrk_ptr;
+
+    //Bwrk
+    .let ptr_as3_Bwrk = %core.get_dynamic_local_memory(Top, <Top; %core.I8>, 3);
+    .let Bwrk_ptr = %mem.addrspacecast_and_lea (Top, <Top; %core.I8>, 3) (ptr_as3_Bwrk, 0, Bwrk);
+    .let Bwrk_ptr_i32 = %core.bitcast (%mem.Ptr(<<Top; %math.F64>>, 0)) Bwrk_ptr;
+    
+    .con for_exit_outer [acc : %math.F64, mem : %mem.M] = {
+        return(mem)
+    };
+
+    //exit mem
+    .con for_body_outer [Kblk : (.Idx dim), [acc : %math.F64, mem : %mem.M], continue : .Cn [%math.F64, %mem.M]] = {
+        
+        //Iblk * Bsize + iloc
+        .let r_a = %core.wrap.add %core.mode.nusw (%core.wrap.mul %core.mode.nusw (Iblk_cast, BlockSize), iloc_cast);
+        //Kblk * Bsize + iloc
+        .let r_b = %core.wrap.add %core.mode.nusw (%core.wrap.mul %core.mode.nusw (Kblk, BlockSize), iloc_cast);
+
+        //Kblk * Bsize + jloc
+        .let c_a = %core.wrap.add %core.mode.nusw (%core.wrap.mul %core.mode.nusw (Kblk, BlockSize), jloc_cast);
+        //Jblk * Bsize + jloc
+        .let c_b = %core.wrap.add %core.mode.nusw (%core.wrap.mul %core.mode.nusw (Jblk_cast, BlockSize), jloc_cast);
+
+        //a[Iblk * Bsize + iloc][Kblk * Bsize + jloc]
+        .let (`mem, a_element) = %matrix.read MT (mem, a, (r_a, c_a));
+        
+        //b[Iblk * Bsize + iloc][Kblk * Bsize + jloc]
+        .let (`mem, b_element) = %matrix.read MT (mem, b, (r_b, c_b));
+
+        //[iloc][jloc]
+        .let locAwrk_ij = %core.wrap.add %core.mode.nsw (%core.wrap.mul %core.mode.nsw (iloc_cast, BlockSize), jloc_cast);
+        .let locBwrk_ij = %core.wrap.add %core.mode.nsw (%core.wrap.mul %core.mode.nsw (iloc_cast, BlockSize), jloc_cast);
+
+        //Awrk[iloc][jloc]
+        .let `lea = %mem.lea (Top, <Top; %math.F64>, 0) (Awrk_ptr_i32, locAwrk_ij);
+        // Awrk[iloc][jloc] = a[Iblk * Bsize + iloc][Kblk * Bsize + jloc];
+        .let `mem = %mem.store (mem, lea, a_element);
+
+        //Bwrk[iloc][jloc]
+        .let `lea = %mem.lea (Top, <Top; %math.F64>, 0) (Bwrk_ptr_i32, locBwrk_ij);
+        // Bwrk[iloc][jloc] = b[Iblk * Bsize + iloc][Kblk * Bsize + jloc];
+        .let `mem = %mem.store (mem, lea, b_element);
+                
+        .con for_exit_inner [acc : %math.F64, mem : %mem.M] = {
+            continue(acc, mem) 
+        };
+
+        //for (size_t kloc = 0; kloc < Bsize; ++kloc)
+        .con for_body_inner [kloc : (.Idx dim), [acc : %math.F64, mem : %mem.M], continue : .Cn [%math.F64, %mem.M]] = {
+  
+            // [iloc][kloc]
+            //.let locAwrk_ik = %core.wrap.add %core.mode.nsw (iloc_cast, kloc);
+            .let locAwrk_ik = %core.wrap.add %core.mode.nsw (%core.wrap.mul %core.mode.nsw (iloc_cast, BlockSize), kloc);
+            //[kloc][jloc]
+            //.let locBwrk_kj = %core.wrap.add %core.mode.nsw (kloc, jloc_cast);
+            .let locBwrk_kj = %core.wrap.add %core.mode.nsw (%core.wrap.mul %core.mode.nsw (kloc, BlockSize), jloc_cast);
+
+            //Awrk[iloc][kloc]
+            .let `lea = %mem.lea (Top, <Top; %math.F64>, 0) (Awrk_ptr_i32, locAwrk_ik);
+            .let (`mem, locAwrk_ik_val) = %mem.load (mem, lea);
+
+            //Bwrk[kloc][jloc]
+            .let `lea = %mem.lea (Top, <Top; %math.F64>, 0) (Bwrk_ptr_i32, locBwrk_kj);
+            .let (`mem, locBwrk_kj_val) = %mem.load (mem, lea);
+
+            .let result = %math.arith.mul 0 (locAwrk_ik_val, locBwrk_kj_val);
+
+            // c[i][j] += Awrk[iloc][kloc] * Bwrk[kloc][jloc];
+            .let (`mem, c_element) = %matrix.read MT (mem, c, (i_cast, j_cast));
+            .let (`mem, `c) = %matrix.insert MT (mem, c, (i_cast, j_cast), %math.arith.add 0 (c_element, result));
+
+            continue(acc, mem)    
+        };
+
+        %affine.For (dim, 2, (%math.F64, %mem.M)) (0:(.Idx dim), BlockSize, 1:(.Idx dim), (0:(%math.F64), mem), for_body_inner, for_exit_inner)
+
+    };
+
+    .let (`mem, Pblk) = %core.div.sdiv (mem, (256:(%core.I32), 16:(%core.I32)));
+    //Using bitcast -> 3072 not included in .Idx 3072 & I want to divide 3072/16
+    .let Pblk_cast = %core.bitcast (.Idx dim) Pblk;
+    
+    %affine.For (dim, 2, (%math.F64, %mem.M)) (0:(.Idx dim), Pblk_cast, 1:(.Idx dim), (0:(%math.F64), mem), for_body_outer, for_exit_outer)
+};

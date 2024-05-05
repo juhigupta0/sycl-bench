@@ -1,0 +1,176 @@
+.plugin core;
+.plugin mem;
+.plugin matrix;
+
+.let Top = ⊤:.Nat;
+.let dim = 256;
+.let MT1 = (2,(dim,dim), %core.I32);
+.let MT2 = (2,(dim,dim), %core.I64);
+.let MT3 = (2,(dim,dim), %math.F32);
+.let MT4 = (2,(dim,dim), %math.F64);
+
+.con .extern MatMul_int [
+    mem : %mem.M,
+    mat_size    : .Idx %core.i32,
+    A           : %matrix.Mat (2, (dim, dim), %core.I32),
+    A_p         : %mem.Ptr (<<Top; (.Idx %core.i32 )>>, 0),
+    A_i         : .Idx %core.i32,
+    x           : .Idx %core.i64,
+    B           : %matrix.Mat (2, (dim, dim), %core.I32),
+    B_p         : %mem.Ptr (<<Top; (.Idx %core.i32 )>>, 0),
+    B_i         : .Idx %core.i32,
+    y           : .Idx %core.i64,
+    C           : %matrix.Mat (2, (dim, dim), %core.I32),
+    C_p         : %mem.Ptr (<<Top; (.Idx %core.i32 )>>, 0),
+    C_i         : .Idx %core.i32,
+    z           : .Idx %core.i64,
+    exit : .Cn [%mem.M] 
+] = {
+
+    .let gid_0 = %core.global_id(1, 0);
+    .let `gid_0 = %core.conv.u dim gid_0;
+    .let gid_1 = %core.global_id(0, 0);
+    .let `gid_1 = %core.conv.u dim gid_1;
+
+    .con for_exit [acc : [%core.I32]] = {
+        .let (`mem, `C) = %matrix.insert MT1 (mem, C, (gid_0, gid_1), acc);
+        exit mem
+    };
+
+    .con for_body [k : %core.I32, acc : [%core.I32], continue : .Cn [%core.I32]] = {
+        .let k_cast = %core.conv.u dim k;
+        .let (`mem, a_ik) = %matrix.read MT1 (mem, A, (gid_0, k_cast));
+        .let (`mem, b_kj) = %matrix.read MT1 (mem, B, (k_cast, gid_1));
+        .let product = %core.wrap.mul %core.mode.nsw (a_ik, b_kj);
+        .let `acc = %core.wrap.add %core.mode.nsw (acc, product);
+        continue(acc)
+
+    };
+    
+    %affine.For (%core.i32, 1, %core.I32) (0:(%core.I32), 256:(%core.I32), 1:(%core.I32), 0:(%core.I32), for_body, for_exit)
+};
+
+.con .extern MatMul_long_long [
+    mem : %mem.M,
+    mat_size    : .Idx %core.i32,
+    A           : %matrix.Mat (2, (dim, dim), %core.I64),
+    A_p         : %mem.Ptr (<<Top; (.Idx %core.i32 )>>, 0),
+    A_i         : .Idx %core.i32,
+    x           : .Idx %core.i64,
+    B           : %matrix.Mat (2, (dim, dim), %core.I64),
+    B_p         : %mem.Ptr (<<Top; (.Idx %core.i32 )>>, 0),
+    B_i         : .Idx %core.i32,
+    y           : .Idx %core.i64,
+    C           : %matrix.Mat (2, (dim, dim), %core.I64),
+    C_p         : %mem.Ptr (<<Top; (.Idx %core.i32 )>>, 0),
+    C_i         : .Idx %core.i32,
+    z           : .Idx %core.i64,
+    exit : .Cn [%mem.M] 
+] = {
+
+    .let gid_0 = %core.global_id(1, 0);
+    .let `gid_0 = %core.conv.u dim gid_0;
+    .let gid_1 = %core.global_id(0, 0);
+    .let `gid_1 = %core.conv.u dim gid_1;
+
+    .con for_exit [acc : [%core.I64]] = {
+        .let (`mem, `C) = %matrix.insert MT2 (mem, C, (gid_0, gid_1), acc);
+        exit mem
+    };
+
+    .con for_body [k : %core.I32, acc : [%core.I64], continue : .Cn [%core.I64]] = {
+        .let k_cast = %core.conv.u dim k;
+        .let (`mem, a_ik) = %matrix.read MT2 (mem, A, (gid_0, k_cast));
+        .let (`mem, b_kj) = %matrix.read MT2 (mem, B, (k_cast, gid_1));
+        .let product = %core.wrap.mul %core.mode.nsw (a_ik, b_kj);
+        .let `acc = %core.wrap.add %core.mode.nsw (acc, product);
+        continue(acc)
+
+    };
+    
+    //.let dim_cast = %core.bitcast (.Idx dim) dim;
+    %affine.For (%core.i32, 1, %core.I64) (0:(%core.I32), 256:(%core.I32), 1:(%core.I32), 0:(%core.I64), for_body, for_exit)
+};
+
+
+.con .extern MatMul_float [
+    mem : %mem.M,
+    mat_size    : .Idx %core.i32,
+    A           : %matrix.Mat (2, (dim, dim), %math.F32),
+    A_p         : %mem.Ptr (<<Top; (.Idx %core.i32 )>>, 0),
+    A_i         : .Idx %core.i32,
+    x           : .Idx %core.i64,
+    B           : %matrix.Mat (2, (dim, dim), %math.F32),
+    B_p         : %mem.Ptr (<<Top; (.Idx %core.i32 )>>, 0),
+    B_i         : .Idx %core.i32,
+    y           : .Idx %core.i64,
+    C           : %matrix.Mat (2, (dim, dim), %math.F32),
+    C_p         : %mem.Ptr (<<Top; (.Idx %core.i32 )>>, 0),
+    C_i         : .Idx %core.i32,
+    z           : .Idx %core.i64,
+    exit : .Cn [%mem.M] 
+] = {
+
+    .let gid_0 = %core.global_id(1, 0);
+    .let `gid_0 = %core.conv.u dim gid_0;
+    .let gid_1 = %core.global_id(0, 0);
+    .let `gid_1 = %core.conv.u dim gid_1;
+
+    .con for_exit [acc : [%math.F32]] = {
+        .let (`mem, `C) = %matrix.insert MT3 (mem, C, (gid_0, gid_1), acc);
+        exit mem
+    };
+
+    .con for_body [k : %core.I32, acc : [%math.F32], continue : .Cn [%math.F32]] = {
+        .let k_cast = %core.conv.u dim k;
+        .let (`mem, a_ik) = %matrix.read MT3 (mem, A, (gid_0, k_cast));
+        .let (`mem, b_kj) = %matrix.read MT3 (mem, B, (k_cast, gid_1));
+        .let product = %math.arith.mul 0 (a_ik, b_kj);
+        .let `acc = %math.arith.add 0 (acc, product);
+        continue(acc)
+
+    };
+    
+    %affine.For (%core.i32, 1, %math.F32) (0:(%core.I32), 256:(%core.I32), 1:(%core.I32), 0:(%math.F32), for_body, for_exit)
+};
+
+.con .extern MatMul_double [
+    mem : %mem.M,
+    mat_size    : .Idx %core.i32,
+    A           : %matrix.Mat (2, (dim, dim), %math.F64),
+    A_p         : %mem.Ptr (<<Top; (.Idx %core.i32 )>>, 0),
+    A_i         : .Idx %core.i32,
+    x           : .Idx %core.i64,
+    B           : %matrix.Mat (2, (dim, dim), %math.F64),
+    B_p         : %mem.Ptr (<<Top; (.Idx %core.i32 )>>, 0),
+    B_i         : .Idx %core.i32,
+    y           : .Idx %core.i64,
+    C           : %matrix.Mat (2, (dim, dim), %math.F64),
+    C_p         : %mem.Ptr (<<Top; (.Idx %core.i32 )>>, 0),
+    C_i         : .Idx %core.i32,
+    z           : .Idx %core.i64,
+    exit : .Cn [%mem.M] 
+] = {
+
+    .let gid_0 = %core.global_id(1, 0);
+    .let `gid_0 = %core.conv.u dim gid_0;
+    .let gid_1 = %core.global_id(0, 0);
+    .let `gid_1 = %core.conv.u dim gid_1;
+
+    .con for_exit [acc : [%math.F64]] = {
+        .let (`mem, `C) = %matrix.insert MT4 (mem, C, (gid_0, gid_1), acc);
+        exit mem
+    };
+
+    .con for_body [k : %core.I32, acc : [%math.F64], continue : .Cn [%math.F64]] = {
+        .let k_cast = %core.conv.u dim k;
+        .let (`mem, a_ik) = %matrix.read MT4 (mem, A, (gid_0, k_cast));
+        .let (`mem, b_kj) = %matrix.read MT4 (mem, B, (k_cast, gid_1));
+        .let product = %math.arith.mul 0 (a_ik, b_kj);
+        .let `acc = %math.arith.add 0 (acc, product);
+        continue(acc)
+
+    };
+    
+    %affine.For (%core.i32, 1, %math.F64) (0:(%core.I32), 256:(%core.I32), 1:(%core.I32), 0:(%math.F64), for_body, for_exit)
+};

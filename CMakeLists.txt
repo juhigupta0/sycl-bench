@@ -12,7 +12,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Due to CMake limitations, hipSYCL requires C++ standard to be set manually
+# Due to CMake limitations, AdaptiveCpp requires C++ standard to be set manually
 set(CMAKE_SYCL_FLAGS "${CMAKE_SYCL_FLAGS} -std=c++17")
 
 if(CMAKE_GENERATOR STREQUAL "Ninja")
@@ -26,7 +26,7 @@ include_directories(${CMAKE_SOURCE_DIR}/polybench/common)
 
 set(supported_implementations
   ComputeCpp
-  hipSYCL
+  AdaptiveCpp
   LLVM
   LLVM-CUDA
   triSYCL
@@ -39,8 +39,8 @@ endif()
 
 if(SYCL_IMPL STREQUAL "ComputeCpp")
   find_package(ComputeCpp MODULE REQUIRED)
-elseif(SYCL_IMPL STREQUAL "hipSYCL")
-  find_package(hipSYCL CONFIG REQUIRED)
+elseif(SYCL_IMPL STREQUAL "AdaptiveCpp")
+  find_package(AdaptiveCpp CONFIG REQUIRED)
 elseif(SYCL_IMPL STREQUAL "LLVM")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl")
 elseif(SYCL_IMPL STREQUAL "LLVM-CUDA")
@@ -92,12 +92,42 @@ set(benchmarks
   #compiletime/compiletime.cpp
 )
 
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/bin/hcf-generator-tool
+    COMMAND acpp -L/usr/lib -lLLVM-16 ${CMAKE_CURRENT_SOURCE_DIR}/thesis/tools/hcf_generator.cpp -o ${CMAKE_CURRENT_SOURCE_DIR}/bin/hcf-generator-tool
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/thesis/tools/hcf_generator.cpp
+    COMMENT "Running acpp to generate hcf-generator-tool tool from hcf_generator.cpp"
+)
+
+add_custom_target(run_hcf_generator ALL
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/bin/hcf-generator-tool
+)
+
+# Tests into consideration
+set(offloads
+  ${PROJECT_SOURCE_DIR}/thesis/examples/Vector_Addition/Vector_Addition.cpp
+  ${PROJECT_SOURCE_DIR}/thesis/examples/DGEMM_MatMulBlocked/DGEMM_MatMulBlocked.cpp
+  ${PROJECT_SOURCE_DIR}/thesis/examples/Modulo_Based_Addition/Modulo_Based_Addition.cpp
+  ${PROJECT_SOURCE_DIR}/thesis/examples/Matrix_Multiplication/MatrixMultiplication.cpp
+  ${PROJECT_SOURCE_DIR}/thesis/examples/MeanSquareError/MeanSquareError.cpp
+  ${PROJECT_SOURCE_DIR}/thesis/examples/Matrix_Fused_operation/Matrix_Fused_Adds.cpp
+)
+# HCF files into consideration
+set(HCF_FILES
+  "${PROJECT_SOURCE_DIR}/thesis/examples/Vector_Addition/vector_addition.hcf"
+  "${PROJECT_SOURCE_DIR}/thesis/examples/DGEMM_MatMulBlocked/dgemm_matmul_blocked.hcf"
+  "${PROJECT_SOURCE_DIR}/thesis/examples/Modulo_Based_Addition/modulo_based_addition.hcf"
+  "${PROJECT_SOURCE_DIR}/thesis/examples/Matrix_Multiplication/matmul.hcf"
+  "${PROJECT_SOURCE_DIR}/thesis/examples/MeanSquareError/mean_square_error.hcf"
+  "${PROJECT_SOURCE_DIR}/thesis/examples/Matrix_Fused_operation/matrix_fused_adds.hcf"
+)
+
 foreach(benchmark IN LISTS benchmarks)
   get_filename_component(target ${benchmark} NAME_WE)
 
   add_executable(${target} ${benchmark})
 
-  if(SYCL_IMPL STREQUAL "ComputeCpp" OR SYCL_IMPL STREQUAL "hipSYCL")
+  if(SYCL_IMPL STREQUAL "ComputeCpp" OR SYCL_IMPL STREQUAL "AdaptiveCpp")
     add_sycl_to_target(TARGET ${target} SOURCES ${benchmark})
   endif()
 
@@ -123,8 +153,52 @@ foreach(benchmark IN LISTS benchmarks)
   set_property(TARGET ${target} PROPERTY FOLDER ${dir})
 endforeach(benchmark)
 
+foreach(offload IN LISTS offloads)
+  get_filename_component(target ${offload} NAME_WE)
+  add_executable(${target} ${offload})
+
+  if(SYCL_IMPL STREQUAL "AdaptiveCpp")
+    target_compile_definitions(${target} PRIVATE SYCL_BENCH_ENABLE_QUEUE_PROFILING)
+    add_sycl_to_target(TARGET ${target} SOURCES ${offload})
+  endif()
+
+  install(TARGETS ${target} RUNTIME DESTINATION bin/offloads/)
+  get_filename_component(dir ${offload} DIRECTORY)
+  set_property(TARGET ${target} PROPERTY FOLDER ${dir})
+
+endforeach(offload)
+
+foreach(offload IN LISTS offloads)
+  get_filename_component(dir ${offload} DIRECTORY)
+  file(GLOB ll_files "${dir}/*.ll")
+
+  foreach(ll_file IN LISTS ll_files)
+    # For each .ll file, generate a corresponding .hcf file name
+    get_filename_component(ll_name ${ll_file} NAME_WE)
+    set(hcf_file "${dir}/${ll_name}.hcf")
+
+    #message(STATUS "Directory: ${dir}")
+    #message(STATUS "LL file: ${ll_file}")
+    #message(STATUS "HCF file: ${hcf_file}")
+
+    # Add a custom command to generate the HCF file from each .ll file
+    add_custom_command(
+      OUTPUT ${hcf_file}
+      COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/bin/hcf-generator-tool ${ll_file}
+      DEPENDS ${ll_file} ${CMAKE_CURRENT_SOURCE_DIR}/bin/hcf-generator-tool
+      COMMENT "Generating HCF file from ${ll_file}"
+    )
+
+    # Create a custom target for each HCF file to ensure it's built
+    get_filename_component(target_name ${ll_name} NAME)
+    add_custom_target(${target_name}_hcf ALL DEPENDS ${hcf_file})
+  endforeach()
+endforeach()
+
 # The "compiletime" target should only be used in the context of the compile time evaluation script
 #set_target_properties(compiletime PROPERTIES EXCLUDE_FROM_ALL 1)
 
 install(PROGRAMS bin/run-suite DESTINATION bin/)
+install(PROGRAMS bin/hcf-generator-tool DESTINATION bin/)
+install(FILES ${HCF_FILES} DESTINATION bin/offloads/)
 install(FILES ${PROJECT_SOURCE_DIR}/Brommy.bmp DESTINATION share/)
